@@ -1,5 +1,6 @@
 package io.vertx.starter;
 
+import com.github.rjeschke.txtmark.Processor;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.eventbus.DeliveryOptions;
@@ -12,6 +13,8 @@ import io.vertx.ext.web.templ.FreeMarkerTemplateEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Date;
+
 public class HttpServerVerticle extends AbstractVerticle {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(HttpServerVerticle.class);
@@ -19,6 +22,8 @@ public class HttpServerVerticle extends AbstractVerticle {
 
   private static final String CONFIG_HTTP_SERVER_PORT = "http.server.port";
   private static final String CONFIG_WIKIDB_QUEUE = "wikidb.queue";
+
+  private static final String EMPTY_PAGE_MARKDOWN = "# A new page\n\nFeel-free to write in Markdown!\n";
 
   private String wikiDbQueue = "wikidb.queue";
   private int portNumber = 8080;
@@ -64,7 +69,31 @@ public class HttpServerVerticle extends AbstractVerticle {
   }
 
   private void pageRenderingHandler(RoutingContext context) {
-    //
+    String requestedPage = context.request().getParam("page");
+    JsonObject request = new JsonObject().put("page", requestedPage);
+
+    DeliveryOptions options = new DeliveryOptions().addHeader("action", "get-page");
+
+    vertx
+      .eventBus()
+      .send(wikiDbQueue, request, options, reply -> {
+        if (reply.succeeded()) {
+          JsonObject body = (JsonObject) reply.result().body();
+          boolean found = body.getBoolean("found");
+          String rawContent = body.getString("rawContent", EMPTY_PAGE_MARKDOWN);
+
+          context.put("title", requestedPage);
+          context.put("id", body.getInteger("id", -1));
+          context.put("newPage", found ? "no" : "yes");
+          context.put("rawContent", rawContent);
+          context.put("content", Processor.process(rawContent));
+          context.put("timestamp", new Date().toString());
+
+          renderTemplate(context, "templates", "/page.ftl");
+        } else {
+          context.fail(reply.cause());
+        }
+      });
   }
 
   private void indexHandler(RoutingContext context) {
@@ -77,18 +106,23 @@ public class HttpServerVerticle extends AbstractVerticle {
           JsonObject body = (JsonObject) reply.result().body();
           context.put("title", "Wiki home");
           context.put("pages", body.getJsonArray("pages").getList());
-          templateEngine.render(context, "templates", "/index.ftl", ar -> {
-            if (ar.succeeded()) {
-              context.response().putHeader("Content-Type", "text/html");
-              context.response().end(ar.result());
-            } else {
-              context.fail(ar.cause());
-            }
-          });
+
+          renderTemplate(context, "templates", "/index.ftl");
         } else {
           context.fail(reply.cause());
         }
       });
+  }
+
+  private void renderTemplate(RoutingContext context, String templateDir, String templateFile) {
+    templateEngine.render(context, templateDir, templateFile, ar -> {
+      if (ar.succeeded()) {
+        context.response().putHeader("Content-Type", "text/html");
+        context.response().end(ar.result());
+      } else {
+        context.fail(ar.cause());
+      }
+    });
   }
 
 }
