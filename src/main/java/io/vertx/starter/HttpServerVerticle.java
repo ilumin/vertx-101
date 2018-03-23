@@ -57,14 +57,25 @@ public class HttpServerVerticle extends AbstractVerticle {
   }
 
   private void pageDeletionHandler(RoutingContext context) {
-    //
+    String id = context.request().getParam("id");
+    JsonObject request = new JsonObject().put("id", id);
+    DeliveryOptions options = new DeliveryOptions().addHeader("action", "delete-page");
+
+    vertx
+      .eventBus()
+      .send(wikiDbQueue, request, options, reply -> {
+        if (reply.succeeded()) {
+          redirect(context, "/", 303);
+        } else {
+          context.fail(reply.cause());
+        }
+      });
   }
 
   private void pageUpdateHandler(RoutingContext context) {
-    String title = context.request().getParam("title");
     JsonObject request = new JsonObject()
       .put("id", context.request().getParam("id"))
-      .put("title", title)
+      .put("title", context.request().getParam("title"))
       .put("markdown", context.request().getParam("markdown"));
 
     DeliveryOptions options = new DeliveryOptions();
@@ -78,7 +89,7 @@ public class HttpServerVerticle extends AbstractVerticle {
       .eventBus()
       .send(wikiDbQueue, request, options, reply -> {
         if (reply.succeeded()) {
-          redirect(context, "/wiki/" + title, 303);
+          redirect(context, "/wiki/" + request.getString("title"), 303);
         } else {
           context.fail(reply.cause());
         }
