@@ -61,7 +61,28 @@ public class HttpServerVerticle extends AbstractVerticle {
   }
 
   private void pageUpdateHandler(RoutingContext context) {
-    //
+    String title = context.request().getParam("title");
+    JsonObject request = new JsonObject()
+      .put("id", context.request().getParam("id"))
+      .put("title", title)
+      .put("markdown", context.request().getParam("markdown"));
+
+    DeliveryOptions options = new DeliveryOptions();
+    if ("yes".equals(context.request().getParam("newPage"))) {
+      options.addHeader("action", "create-page");
+    } else {
+      options.addHeader("action", "save-page");
+    }
+
+    vertx
+      .eventBus()
+      .send(wikiDbQueue, request, options, reply -> {
+        if (reply.succeeded()) {
+          redirect(context, "/wiki/" + title, 303);
+        } else {
+          context.fail(reply.cause());
+        }
+      });
   }
 
   private void pageCreateHandler(RoutingContext context) {
@@ -123,6 +144,12 @@ public class HttpServerVerticle extends AbstractVerticle {
         context.fail(ar.cause());
       }
     });
+  }
+
+  private void redirect(RoutingContext context, String path, int statusCode) {
+    context.response().setStatusCode(statusCode);
+    context.response().putHeader("Location", path);
+    context.response().end();
   }
 
 }
