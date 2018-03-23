@@ -2,16 +2,20 @@ package io.vertx.starter;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
+import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.http.HttpServer;
+import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
+import io.vertx.ext.web.templ.FreeMarkerTemplateEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class HttpServerVerticle extends AbstractVerticle {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(HttpServerVerticle.class);
+  private final FreeMarkerTemplateEngine templateEngine = FreeMarkerTemplateEngine.create();
 
   private static final String CONFIG_HTTP_SERVER_PORT = "http.server.port";
   private static final String CONFIG_WIKIDB_QUEUE = "wikidb.queue";
@@ -64,7 +68,27 @@ public class HttpServerVerticle extends AbstractVerticle {
   }
 
   private void indexHandler(RoutingContext context) {
-    //
+    DeliveryOptions options = new DeliveryOptions().addHeader("action", "all-pages");
+
+    vertx
+      .eventBus()
+      .send(wikiDbQueue, new JsonObject(), options, reply -> {
+        if (reply.succeeded()) {
+          JsonObject body = (JsonObject) reply.result().body();
+          context.put("title", "Wiki home");
+          context.put("pages", body.getJsonArray("pages").getList());
+          templateEngine.render(context, "templates", "/index.ftl", ar -> {
+            if (ar.succeeded()) {
+              context.response().putHeader("Content-Type", "text/html");
+              context.response().end(ar.result());
+            } else {
+              context.fail(ar.cause());
+            }
+          });
+        } else {
+          context.fail(reply.cause());
+        }
+      });
   }
 
 }
