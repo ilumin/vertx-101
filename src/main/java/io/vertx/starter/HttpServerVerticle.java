@@ -86,7 +86,13 @@ public class HttpServerVerticle extends AbstractVerticle {
   }
 
   private void pageCreateHandler(RoutingContext context) {
-    //
+    String pageName = context.request().getParam("name");
+    String location = "/wiki/" + pageName;
+    if (pageName == null || pageName.isEmpty()) {
+      location = "/";
+    }
+
+    redirect(context, location, 303);
   }
 
   private void pageRenderingHandler(RoutingContext context) {
